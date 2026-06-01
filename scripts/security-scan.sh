@@ -4,8 +4,8 @@ set -euo pipefail
 REQUIRE_SECURITY_TOOLS="${REQUIRE_SECURITY_TOOLS:-false}"
 RUN_CONTAINER_SCANS="${RUN_CONTAINER_SCANS:-false}"
 CHECKOV_IMAGE="${CHECKOV_IMAGE:-bridgecrew/checkov:3.2.471}"
-TRIVY_IMAGE="${TRIVY_IMAGE:-aquasec/trivy:0.56.2}"
-GITLEAKS_IMAGE="${GITLEAKS_IMAGE:-zricethezav/gitleaks:v8.21.2}"
+TRIVY_IMAGE="${TRIVY_IMAGE:-aquasec/trivy:0.71.0}"
+GITLEAKS_IMAGE="${GITLEAKS_IMAGE:-zricethezav/gitleaks:v8.30.1}"
 
 missing_tool() {
   local name="$1"

@@ -6,5 +6,8 @@ if ! command -v tflint >/dev/null 2>&1; then
   exit 0
 fi
 
-tflint --init
-tflint --recursive
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TFLINT_CONFIG="${SCRIPT_DIR}/../.tflint.hcl"
+
+tflint --init --config "${TFLINT_CONFIG}"
+tflint --recursive --config "${TFLINT_CONFIG}"

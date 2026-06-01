@@ -36,6 +36,7 @@ env:
   ARM_USE_OIDC: "true"
   INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
   TF_IN_AUTOMATION: "true"
+  TF_VERSION: "1.15.5"
 
 jobs:
   plan-pr:
@@ -67,7 +68,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.15.3"
+          terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform plan
         run: bash scripts/terraform-plan-ci.sh "${{ matrix.environment }}"
@@ -125,7 +126,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.15.3"
+          terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform plan
         run: bash scripts/terraform-plan-ci.sh "${{ inputs.environment }}"

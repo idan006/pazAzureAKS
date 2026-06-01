@@ -27,6 +27,7 @@ env:
   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   ARM_USE_OIDC: "true"
   TF_IN_AUTOMATION: "true"
+  TF_VERSION: "1.15.5"
 
 concurrency:
   group: terraform-apply-${{ inputs.environment }}
@@ -52,7 +53,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.15.3"
+          terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform plan
         run: bash scripts/terraform-plan-ci.sh "${{ inputs.environment }}"
@@ -106,7 +107,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.15.3"
+          terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform apply reviewed plan
         run: bash scripts/terraform-apply-ci.sh "${{ inputs.environment }}" "artifacts/plans/${{ inputs.environment }}/tfplan.bin"
