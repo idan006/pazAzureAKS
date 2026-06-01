@@ -91,7 +91,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download reviewed plan
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: reviewed-tfplan-${{ inputs.environment }}-${{ github.run_id }}
           path: artifacts/plans/${{ inputs.environment }}
