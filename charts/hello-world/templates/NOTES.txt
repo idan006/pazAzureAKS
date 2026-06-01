@@ -1,0 +1,7 @@
+Release {{ .Release.Name }} deployed in namespace {{ .Release.Namespace }}.
+
+Service:
+  {{ include "hello-world.fullname" . }}:{{ .Values.service.port }}
+
+Ingress:
+  class={{ .Values.ingress.className }}

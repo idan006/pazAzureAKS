@@ -1,0 +1,80 @@
+name: CI - Validate IaC
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  CHECKOV_IMAGE: bridgecrew/checkov:3.2.471
+  GITLEAKS_IMAGE: zricethezav/gitleaks:v8.21.2
+  TF_IN_AUTOMATION: "true"
+  TRIVY_IMAGE: aquasec/trivy:0.56.2
+
+jobs:
+  terraform-and-static-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.3"
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: Install validation dependencies
+        run: python3 -m pip install --user checkov pyyaml
+
+      - name: Run validation suite
+        env:
+          SKIP_SECURITY_SCAN: "true"
+        run: bash scripts/validate-all.sh
+
+      - name: Run strict security scans
+        env:
+          REQUIRE_SECURITY_TOOLS: "true"
+          RUN_CONTAINER_SCANS: "true"
+        run: bash scripts/security-scan.sh
+
+      - name: Generate Checkov SARIF
+        if: always()
+        run: checkov -d . --config-file .checkov.yml --output sarif --output-file-path checkov.sarif || true
+
+      - name: Generate Trivy SARIF
+        if: always()
+        run: docker run --rm -v "${PWD}:/workspace" -w /workspace "${TRIVY_IMAGE}" config --config /workspace/trivy.yaml --format sarif --output /workspace/trivy.sarif /workspace || true
+
+      - name: Generate Gitleaks SARIF
+        if: always()
+        run: docker run --rm -v "${PWD}:/workspace" -w /workspace "${GITLEAKS_IMAGE}" detect --source /workspace --config /workspace/.gitleaks.toml --redact --report-format sarif --report-path /workspace/gitleaks.sarif || true
+
+      - name: Upload Checkov SARIF
+        if: always() && hashFiles('checkov.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov.sarif
+
+      - name: Upload Trivy SARIF
+        if: always() && hashFiles('trivy.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif
+
+      - name: Upload Gitleaks SARIF
+        if: always() && hashFiles('gitleaks.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif

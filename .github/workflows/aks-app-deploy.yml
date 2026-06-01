@@ -1,0 +1,79 @@
+name: AKS App Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy to
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+      install_nginx:
+        description: Install or upgrade nginx ingress first
+        required: true
+        type: boolean
+        default: true
+      public_url:
+        description: Optional Application Gateway URL for HTTP 200 validation
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_USE_OIDC: "true"
+
+jobs:
+  deploy:
+    name: Deploy hello-world to ${{ inputs.environment }}
+    runs-on:
+      - self-hosted
+      - linux
+      - aks-private
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: aks-app-deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Get private AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group "azure-hub-spoke-aks-${{ inputs.environment }}-rg" \
+            --name "azure-hub-spoke-aks-${{ inputs.environment }}-aks" \
+            --overwrite-existing
+
+      - name: Install nginx ingress
+        if: inputs.install_nginx
+        run: bash scripts/install-nginx-ingress.sh "${{ inputs.environment }}"
+
+      - name: Deploy hello-world
+        run: bash scripts/deploy-hello-world.sh "${{ inputs.environment }}"
+
+      - name: Validate public endpoint
+        if: inputs.public_url != ''
+        run: bash scripts/validate-webapp.sh "${{ inputs.public_url }}"

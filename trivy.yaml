@@ -1,0 +1,17 @@
+scan:
+  scanners:
+    - misconfig
+    - secret
+
+severity:
+  - HIGH
+  - CRITICAL
+
+misconfiguration:
+  scanners:
+    - terraform
+    - kubernetes
+
+skip-dirs:
+  - .git
+  - .terraform

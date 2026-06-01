@@ -1,0 +1,122 @@
+name: Terraform Apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to apply
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+      confirm:
+        description: Type apply to confirm
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_USE_OIDC: "true"
+  TF_IN_AUTOMATION: "true"
+
+concurrency:
+  group: terraform-apply-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: inputs.confirm == 'apply'
+    name: Create reviewed plan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.3"
+
+      - name: Terraform plan
+        run: bash scripts/terraform-plan-ci.sh "${{ inputs.environment }}"
+
+      - name: Policy-as-code gate
+        env:
+          REQUIRE_POLICY_TOOL: "true"
+          RUN_CONTAINER_SCANS: "true"
+        run: bash scripts/policy-check.sh "artifacts/plans/${{ inputs.environment }}/tfplan.json"
+
+      - name: Upload reviewed plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-tfplan-${{ inputs.environment }}-${{ github.run_id }}
+          path: artifacts/plans/${{ inputs.environment }}/
+          retention-days: 1
+
+      - name: Publish plan summary
+        run: |
+          {
+            echo "## Reviewed Terraform plan: ${{ inputs.environment }}"
+            echo
+            echo '```'
+            sed -n '1,220p' "artifacts/plans/${{ inputs.environment }}/tfplan.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    name: Apply ${{ inputs.environment }}
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download reviewed plan
+        uses: actions/download-artifact@v4
+        with:
+          name: reviewed-tfplan-${{ inputs.environment }}-${{ github.run_id }}
+          path: artifacts/plans/${{ inputs.environment }}
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.3"
+
+      - name: Terraform apply reviewed plan
+        run: bash scripts/terraform-apply-ci.sh "${{ inputs.environment }}" "artifacts/plans/${{ inputs.environment }}/tfplan.bin"
+
+      - name: Publish outputs
+        run: |
+          {
+            echo "## Terraform outputs: ${{ inputs.environment }}"
+            echo
+            echo '```json'
+            cat "artifacts/plans/${{ inputs.environment }}/outputs.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

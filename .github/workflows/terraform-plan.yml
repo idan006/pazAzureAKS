@@ -1,0 +1,162 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**.tf"
+      - ".github/workflows/terraform-plan.yml"
+      - "backend/**"
+      - "envs/**"
+      - "modules/**"
+      - "policies/**"
+      - "scripts/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to plan
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+  pull-requests: read
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_USE_OIDC: "true"
+  INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  plan-pr:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    name: Plan ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment:
+          - dev
+          - qa
+          - prod
+    concurrency:
+      group: terraform-plan-${{ matrix.environment }}-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.3"
+
+      - name: Terraform plan
+        run: bash scripts/terraform-plan-ci.sh "${{ matrix.environment }}"
+
+      - name: Policy-as-code gate
+        env:
+          REQUIRE_POLICY_TOOL: "true"
+          RUN_CONTAINER_SCANS: "true"
+        run: bash scripts/policy-check.sh "artifacts/plans/${{ matrix.environment }}/tfplan.json"
+
+      - name: Infracost estimate
+        if: env.INFRACOST_API_KEY != ''
+        env:
+          INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
+          infracost breakdown --path "artifacts/plans/${{ matrix.environment }}/tfplan.json" --format table | tee "artifacts/plans/${{ matrix.environment }}/infracost.txt"
+
+      - name: Publish plan summary
+        run: |
+          {
+            echo "## Terraform plan: ${{ matrix.environment }}"
+            echo
+            echo '```'
+            sed -n '1,180p' "artifacts/plans/${{ matrix.environment }}/tfplan.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ matrix.environment }}-${{ github.run_id }}
+          path: artifacts/plans/${{ matrix.environment }}/
+          retention-days: 3
+
+  plan-dispatch:
+    if: github.event_name == 'workflow_dispatch'
+    name: Plan ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: terraform-plan-${{ inputs.environment }}-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.3"
+
+      - name: Terraform plan
+        run: bash scripts/terraform-plan-ci.sh "${{ inputs.environment }}"
+
+      - name: Policy-as-code gate
+        env:
+          REQUIRE_POLICY_TOOL: "true"
+          RUN_CONTAINER_SCANS: "true"
+        run: bash scripts/policy-check.sh "artifacts/plans/${{ inputs.environment }}/tfplan.json"
+
+      - name: Infracost estimate
+        if: env.INFRACOST_API_KEY != ''
+        env:
+          INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
+          infracost breakdown --path "artifacts/plans/${{ inputs.environment }}/tfplan.json" --format table | tee "artifacts/plans/${{ inputs.environment }}/infracost.txt"
+
+      - name: Publish plan summary
+        run: |
+          {
+            echo "## Terraform plan: ${{ inputs.environment }}"
+            echo
+            echo '```'
+            sed -n '1,180p' "artifacts/plans/${{ inputs.environment }}/tfplan.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ inputs.environment }}-${{ github.run_id }}
+          path: artifacts/plans/${{ inputs.environment }}/
+          retention-days: 3

@@ -1,0 +1,13 @@
+framework:
+  - terraform
+  - kubernetes
+  - secrets
+
+skip-path:
+  - .terraform
+  - .git
+
+download-external-modules: false
+quiet: true
+compact: true
+soft-fail: false

@@ -1,0 +1,8 @@
+title = "azure-hub-spoke-aks gitleaks config"
+
+[allowlist]
+description = "Ignore generated and local Terraform directories."
+paths = [
+  '''^\.git/''',
+  '''^\.terraform/'''
+]

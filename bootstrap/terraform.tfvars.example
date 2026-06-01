@@ -1,0 +1,10 @@
+location             = "eastus"
+resource_group_name  = "rg-tfstate-azure-hub-spoke-aks"
+storage_account_name = "stpaztfstate001"
+container_name       = "tfstate"
+
+tags = {
+  managed_by = "terraform"
+  project    = "azure-hub-spoke-aks"
+  workload   = "remote-state"
+}
