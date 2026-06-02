@@ -1,11 +1,9 @@
-# Azure Hub-Spoke AKS Terraform Platform
+# Azure Hub-Spoke AKS Terraform Platform by Idan Agam
 
 Production-oriented Terraform project for deploying a private AKS hello-world platform on Azure using a Hub-Spoke network model.
-
-The default design exposes only one public entry point: Azure Application Gateway WAF in the Hub. Spoke VNets and AKS clusters are private and are not directly reachable from the internet.
+Exposes only one public entry point: Azure Application Gateway WAF in the Hub. Spoke VNets and AKS clusters are private and are not directly reachable from the internet.
 
 ## What This Project Builds
-
 - Azure Hub VNet with:
   - Application Gateway WAF
   - Azure Firewall
@@ -53,7 +51,6 @@ Spoke VNet
 ```
 
 Traffic flow:
-
 1. Internet clients connect to Application Gateway WAF.
 2. Application Gateway forwards traffic to the private nginx ingress LoadBalancer IP.
 3. nginx ingress routes `/` to the hello-world ClusterIP service.
@@ -69,21 +66,21 @@ Default nginx ingress private IPs:
 | prod | `10.30.1.100` |
 
 ## Architecture Explanation
-
 This platform uses a hub-spoke network pattern to keep compute private while
-still exposing the application through one controlled public entry point.
+still exposing the application through one controlled public entry point
 
 The Hub VNet contains shared ingress and security services:
 
 - Application Gateway WAF is the only public application ingress.
 - Azure Firewall is the controlled egress next hop for AKS and app subnets.
 - Azure Bastion is available for private administrative access patterns.
-- Shared services can be added without placing them in workload subnets.
+- Shared services can be added without placing them in workload subnets
+- 3 environments: dev, qa, production 
 
 The Spoke VNet contains the workload:
 
-- AKS is deployed as a private cluster.
-- AKS nodes do not receive public IPs.
+- AKS is deployed as a private cluster
+- AKS nodes do not receive public IPs
 - nginx ingress is exposed with an internal Azure Load Balancer only.
 - The hello-world app is exposed to the cluster through a ClusterIP service and
   to the platform through nginx ingress.
@@ -98,7 +95,8 @@ ExpressRoute circuits, or NAT gateways in the default design.
 
 Application ownership is split deliberately:
 
-- Terraform owns Azure infrastructure.
+- Terraform owns Azure infrastructure as IaC (we can use Pulumi as well):
+  Terraform remote state is in Azure Blob Storage: rg-tfstate-azure-hub-spoke-aks → stpaztfstate001 → container tfstate
 - The upstream nginx ingress Helm chart owns the ingress controller.
 - The local `charts/hello-world` Helm chart owns the application release.
 
@@ -150,69 +148,22 @@ visual explanation of the platform.
 `-- outputs.tf
 ```
 
-## How To Use
+## How To start:
 
 Use this order for a normal rollout:
-
-1. Install prerequisites.
-2. Authenticate to Azure.
-3. Bootstrap remote Terraform state.
-4. Review and edit environment tfvars.
-5. Run local validation.
-6. Deploy infrastructure with Terraform.
-7. Connect from a private network path to AKS.
-8. Install nginx ingress and deploy hello-world.
-9. Validate the public Application Gateway endpoint.
-10. Enable GitHub CI/CD for ongoing changes.
-
-## How To Enroll
-
-Use this checklist when onboarding a new operator, subscription, or environment
-to this project.
-
-1. Enroll the Azure subscription:
-   - Confirm the target subscription ID.
-   - Confirm the subscription has quota for Application Gateway WAF_v2, Azure
-     Firewall, Bastion, AKS nodes, public IPs, Log Analytics, and Key Vault.
-   - Register the required Azure providers listed below.
-
-2. Enroll the operator identity:
-   - Grant permission to create and manage the platform resources.
-   - Grant `Storage Blob Data Contributor` on the Terraform state storage
-     account after bootstrap.
-   - Add durable platform admin groups to `key_vault_admin_object_ids`.
-   - Add runtime secret readers to `key_vault_secrets_user_object_ids`.
-
-3. Enroll local tooling:
-   - Install Azure CLI, Terraform, Bash, kubectl, Helm, and Python 3.
-   - Authenticate with `az login`.
-   - Set `ARM_SUBSCRIPTION_ID`.
-   - Set `TERRAFORM_BIN` if Terraform is not on `PATH`.
-
-4. Enroll remote state:
-   - Create or update `bootstrap/terraform.tfvars`.
-   - Run `bash scripts/bootstrap-state.sh`.
-   - Confirm `backend/dev.backend.hcl`, `backend/qa.backend.hcl`, and
-     `backend/prod.backend.hcl` point to the correct storage account.
-
-5. Enroll environments:
-   - Review `envs/dev.tfvars`, `envs/qa.tfvars`, and `envs/prod.tfvars`.
-   - Confirm address spaces do not overlap existing networks.
-   - Confirm nginx ingress private IPs are inside the AKS subnet.
-   - Confirm tags, node sizes, and admin group object IDs are correct.
-
-6. Enroll CI/CD:
-   - Create GitHub Environments named `dev`, `qa`, and `prod`.
-   - Configure Azure OIDC federation for GitHub Actions.
-   - Add `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and
-     `AZURE_SUBSCRIPTION_ID`.
-   - Configure a private self-hosted runner with labels `self-hosted`,
-     `linux`, and `aks-private` for app deployment.
-
+1. Run bootstrap script (scripts/bootstrap-state.sh) (initializes and applies the `bootstrap/` Terraform stack to create the Azure Storage backend used for remote Terraform state)
+2. Authenticate to Azure (run: az login)
+3. Deploy infrastructure with Terraform (run for each environment: terraform init && terraform fmt -recursive && terraform validate && terraform plan && terraform apply -auto-approve)
+4. Connect from a private network path to AKS:
+az aks get-credentials \
+  --resource-group azure-hub-spoke-aks-dev-rg \
+  --name azure-hub-spoke-aks-dev-aks \
+  --overwrite-existing
+  # and run to validate:
+  kubectl get nodes
+5. Validate the public Application Gateway endpoint
 7. Enroll workstation validation:
-   - Add the Application Gateway public IP to a local hosts entry when using a
-     friendly local name, for example:
-
+   - Add the Application Gateway public IP to a local hosts entry when 
 ```text
 135.237.38.92 hello-world.local # paz-hello-world
 ```
@@ -244,7 +195,7 @@ Deployment ownership summary:
   controls: no direct internet to compute, only Application Gateway ingress, and
   hub-spoke connectivity through VNet peering.
 
-## Prerequisites
+## Prerequisites (TBD: create a bash script for that)
 
 Required locally:
 
@@ -297,63 +248,10 @@ Required GitHub configuration for CI/CD:
   - `linux`
   - `aks-private`
 
-## Azure Login And Provider Registration
 
-```bash
-az login
-az account set --subscription "<subscription-id>"
-export ARM_SUBSCRIPTION_ID="<subscription-id>"
-```
 
-Register providers:
 
-```bash
-az provider register --namespace Microsoft.Network
-az provider register --namespace Microsoft.ContainerService
-az provider register --namespace Microsoft.OperationalInsights
-az provider register --namespace Microsoft.KeyVault
-az provider register --namespace Microsoft.Authorization
-az provider register --namespace Microsoft.Security
-```
 
-## Remote State Bootstrap
-
-Create remote state before deploying environments.
-
-```bash
-cp bootstrap/terraform.tfvars.example bootstrap/terraform.tfvars
-```
-
-Edit `bootstrap/terraform.tfvars`:
-
-```hcl
-location             = "eastus"
-resource_group_name  = "rg-tfstate-azure-hub-spoke-aks"
-storage_account_name = "youruniquetfstate001"
-container_name       = "tfstate"
-```
-
-Bootstrap state:
-
-```bash
-bash scripts/bootstrap-state.sh
-```
-
-Update these files with the same storage account name if you changed it:
-
-```text
-backend/dev.backend.hcl
-backend/qa.backend.hcl
-backend/prod.backend.hcl
-```
-
-Each environment uses a separate state key:
-
-```text
-azure-hub-spoke-aks/dev.tfstate
-azure-hub-spoke-aks/qa.tfstate
-azure-hub-spoke-aks/prod.tfstate
-```
 
 ## Configure Environments
 
@@ -365,101 +263,9 @@ envs/qa.tfvars
 envs/prod.tfvars
 ```
 
-Important values:
 
-- `location`
-- `hub_address_space`
-- `spoke_address_space`
-- `spoke_subnets`
-- `nginx_ingress_private_ip`
-- `aks_node_count`
-- `aks_vm_size`
-- `tags`
-- `aks_admin_group_object_ids`
 
-Do not commit real secrets into tfvars. Use Azure managed identity, workload identity, GitHub OIDC, and Key Vault-backed runtime integrations.
-
-Key Vault is deployed with:
-
-- RBAC authorization, purge protection, soft delete, and public network access disabled
-- A private endpoint in the spoke private endpoint subnet
-- `privatelink.vaultcore.azure.net` Private DNS linked to the spoke VNet
-- audit diagnostics sent to Log Analytics
-- explicit admin and secret-consumer role assignment inputs
-
-Configure secret access with:
-
-```hcl
-key_vault_admin_object_ids        = ["<entra-object-id>"]
-key_vault_secrets_user_object_ids = ["<entra-object-id>"]
-```
-
-The current Terraform deployer is assigned `Key Vault Administrator` by default for bootstrap operations. Set `key_vault_assign_current_principal_admin = false` after you have durable break-glass/admin groups configured.
-
-## Local Validation
-
-Run the full local validation suite:
-
-```bash
-bash scripts/validate-all.sh
-```
-
-This runs:
-
-- File presence checks
-- Module contract checks
-- Environment/backend consistency checks
-- CI/CD workflow/config checks
-- Security architecture checks
-- Kubernetes manifest checks
-- Basic secret scanning
-- `terraform fmt -check`
-- `terraform validate`
-- Optional TFLint
-- Optional Checkov, Trivy, and Gitleaks when installed
-
-You can also run individual tests:
-
-```bash
-bash tests/check-files.sh
-bash tests/module-contracts.sh
-bash tests/environment-config.sh
-bash tests/cicd-config.sh
-bash tests/security-architecture.sh
-bash tests/k8s-manifests.sh
-bash tests/no-secrets.sh
-bash tests/terraform-fmt.sh
-bash tests/terraform-validate.sh
-bash tests/tflint.sh
-```
-
-## Deploy Infrastructure
-
-Start with `dev`.
-
-```bash
-bash scripts/init-dev.sh
-bash scripts/plan.sh dev
-bash scripts/apply.sh dev
-```
-
-Deploy `qa`:
-
-```bash
-bash scripts/init-qa.sh
-bash scripts/plan.sh qa
-bash scripts/apply.sh qa
-```
-
-Deploy `prod`:
-
-```bash
-bash scripts/init-prod.sh
-bash scripts/plan.sh prod
-bash scripts/apply.sh prod
-```
-
-## Remote State Backup And Restore
+## Remote .tf State Backup And Restore in Azure Blob storage: 
 
 Terraform state is stored in Azure Blob Storage using the environment backend files under `backend/`.
 
@@ -493,43 +299,6 @@ terraform output -raw aks_private_fqdn
 
 See `docs/terraform-operations.md` for the full Terraform operations, plan
 review, drift detection, and cleanup runbook.
-
-## Deploy The Hello-World App
-
-AKS is private. Run these commands from a machine that can resolve and reach the private AKS API, such as:
-
-- A VM in the Hub or Spoke network
-- A private self-hosted GitHub runner
-- A VPN-connected workstation
-- An ExpressRoute-connected host
-
-Get AKS credentials:
-
-```bash
-az aks get-credentials \
-  --resource-group azure-hub-spoke-aks-dev-rg \
-  --name azure-hub-spoke-aks-dev-aks \
-  --overwrite-existing
-```
-
-Install or upgrade nginx ingress:
-
-```bash
-bash scripts/install-nginx-ingress.sh dev
-```
-
-Deploy hello-world with Helm:
-
-```bash
-bash scripts/deploy-hello-world.sh dev
-```
-
-The app chart lives in `charts/hello-world`. Use `values-dev.yaml`, `values-qa.yaml`, and
-`values-prod.yaml` for environment-specific release settings. Terraform owns Azure
-infrastructure; Helm owns the Kubernetes application release.
-
-See `docs/app-deployment.md` for the full app deployment, rollback, and
-troubleshooting runbook.
 
 Useful Helm commands:
 
@@ -575,8 +344,8 @@ prod
 
 Recommended protection:
 
-- `dev`: optional reviewers
-- `qa`: required reviewers
+- `dev`: optional reviewers in PR
+- `qa`: required reviewers in PR
 - `prod`: required reviewers, restricted branches, optional wait timer
 
 Add repository or organization secrets:
@@ -597,8 +366,6 @@ Replace the placeholder team in `.github/CODEOWNERS`:
 ```text
 * @platform-team
 ```
-
-Use your real GitHub team or user before enabling branch protection.
 
 ## CI/CD Promotion Flow
 
@@ -629,25 +396,7 @@ Use your real GitHub team or user before enabling branch protection.
 - Optional Infracost estimate in Terraform plan workflow
 - SARIF upload hooks for GitHub code scanning
 
-## Policy-As-Code Rules
-
-OPA policies in `policies/conftest/terraform.rego` deny:
-
-- Public IP resources outside the Application Gateway module
-- Public AKS API servers
-- AKS node public IPs
-- AKS egress that does not use UDR
-- Key Vault public network access
-- Application Gateway deployments that do not use WAF_v2
-
-Run policy checks against a Terraform plan JSON:
-
-```bash
-bash scripts/terraform-plan-ci.sh dev
-bash scripts/policy-check.sh artifacts/plans/dev/tfplan.json
-```
-
-## Security Model
+## Security:
 
 - Application Gateway WAF is the public ingress point.
 - AKS API endpoint is private.
@@ -771,12 +520,6 @@ Security scans skip locally:
 - Add SLOs, alert routing, and incident response runbooks.
 - Add disaster recovery and multi-region strategy.
 
-## MLOps And AI SRE Extension Ideas
-
-- AI SRE Agent: use Azure Monitor, Log Analytics, managed Prometheus, Grafana annotations, and AKS events to summarize incidents and suggest remediation.
-- Drift detection: schedule Terraform plan, Checkov, OPA/Conftest, and policy-as-code checks.
-- Private ML workloads: add GPU node pools, KEDA, internal model-serving ingress, private ACR, and workload identity for model artifact access.
-
 ## Cleanup
 
 Destroy an environment only after confirming the correct backend is initialized:
@@ -785,7 +528,3 @@ Destroy an environment only after confirming the correct backend is initialized:
 bash scripts/init-dev.sh
 terraform destroy -var-file=envs/dev.tfvars
 ```
-
-Repeat with `qa` or `prod` only when intentional.
-
-Remote state resources are managed by the bootstrap stack and should be destroyed separately only when all environment states are no longer needed.
